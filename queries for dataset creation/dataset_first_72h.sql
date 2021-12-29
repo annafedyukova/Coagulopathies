@@ -1,5 +1,5 @@
 CREATE OR REPLACE TABLE `learned-vortex-290901.Coagulation.cohort_first_72h` as 
-select *,row_number() over ( partition by stay_id order by charttime ) as rownum from (
+select *, DATETIME_DIFF(charttime, intime, MINUTE) as data_diff_adm_event, row_number() over ( partition by stay_id order by charttime ) as rownum from (
 with cohort as
     --patients who got LMWH or SC Heparin within 24 hours at least once
     (  
