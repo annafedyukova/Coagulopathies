@@ -1,5 +1,5 @@
 CREATE OR REPLACE TABLE `learned-vortex-290901.Coagulation.cohort_first_72h` as 
-select * from (
+select *,row_number() over ( partition by stay_id order by charttime ) as rownum from (
 with cohort as
     --patients who got LMWH or SC Heparin within 24 hours at least once
     (  
@@ -38,18 +38,18 @@ with cohort as
                 and emar_2.scheduletime>= datetime_sub(icustays_2.intime, interval 48 hour) and emar_2.scheduletime<=icustays_2.intime
                 group by icustays_2.stay_id)
         --INR < 2 if tested within 48 hours of ICU admission
-        and icustays.stay_id not in (select icustays_2.stay_id
+        /*and icustays.stay_id not in (select icustays_2.stay_id
                 from  `physionet-data.mimic_icu.icustays`  icustays_2
                 inner join `physionet-data.mimic_derived.coagulation` coagulation
                 on coagulation.hadm_id=icustays_2.hadm_id
                 and coagulation.charttime >= icustays_2.intime
                 and coagulation.charttime <= datetime_add(icustays_2.intime, INTERVAL 48 HOUR)
                 and coagulation.inr < 2
-                where coagulation.inr is not null)
+                where coagulation.inr is not null)*/
         group by icustays.stay_id, icustays.hadm_id, icustays.intime        
     )
 --blood gases
-    select cohort.stay_id,cohort.intime,bg.charttime,'ph' as event, bg.ph event_value
+select cohort.stay_id,cohort.intime,bg.charttime,'ph' as event, bg.ph event_value
     from  cohort
     inner join `physionet-data.mimic_derived.bg` bg
     on bg.hadm_id=cohort.hadm_id
@@ -158,59 +158,15 @@ union all
     and vitalsign.charttime >= cohort.intime
     and vitalsign.charttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
     where (vitalsign.mbp is not null or (vitalsign.dbp is not null and vitalsign.sbp is not null))
+--norepinephrine_equivalent_dose (replaces values from different tables: dobutamine,dopamine,epinephrine,norepinephrine,phenylephrine)
 union all
---dobutamine
-    select cohort.stay_id, cohort.intime, dobutamine.starttime, 'dobutamine' as event, dobutamine.vaso_amount as event_value
+    select norepinephrine_ed.stay_id, cohort.intime, min(norepinephrine_ed.starttime) charttime, 'norepinephrine_equivalent_dose' as event, norepinephrine_ed.norepinephrine_equivalent_dose as event_value
     from cohort
-    inner join `physionet-data.mimic_derived.dobutamine` dobutamine
-    on dobutamine.stay_id=cohort.stay_id
-    and dobutamine.starttime >= cohort.intime
-    and dobutamine.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
-    where dobutamine.vaso_amount is not null
-union all
---dopamine
-    select cohort.stay_id, cohort.intime, dopamine.starttime, 'dopamine' as event, dopamine.vaso_amount as event_value
-    from cohort
-    inner join `physionet-data.mimic_derived.dopamine` dopamine
-    on dopamine.stay_id=cohort.stay_id
-    and dopamine.starttime >= cohort.intime
-    and dopamine.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
-    where dopamine.vaso_amount is not null
-union all
---epinephrine
-    select cohort.stay_id, cohort.intime, epinephrine.starttime, 'epinephrine' as event, epinephrine.vaso_amount as event_value
-    from cohort
-    inner join `physionet-data.mimic_derived.epinephrine` epinephrine
-    on epinephrine.stay_id=cohort.stay_id
-    and epinephrine.starttime >= cohort.intime
-    and epinephrine.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
-    where epinephrine.vaso_amount is not null
-union all
---norepinephrine
-    select cohort.stay_id, cohort.intime, norepinephrine.starttime, 'norepinephrine' as event, norepinephrine.vaso_amount as event_value
-    from cohort
-    inner join `physionet-data.mimic_derived.norepinephrine` norepinephrine
-    on norepinephrine.stay_id=cohort.stay_id
-    and norepinephrine.starttime >= cohort.intime
-    and norepinephrine.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
-    where norepinephrine.vaso_amount is not null
-union all
---phenylephrine
-    select cohort.stay_id, cohort.intime, phenylephrine.starttime, 'phenylephrine' as event, phenylephrine.vaso_amount as event_value
-    from cohort
-    inner join `physionet-data.mimic_derived.phenylephrine` phenylephrine
-    on phenylephrine.stay_id=cohort.stay_id
-    and phenylephrine.starttime >= cohort.intime
-    and phenylephrine.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
-    where phenylephrine.vaso_amount is not null
-union all
---vasopressin
-    select cohort.stay_id, cohort.intime, vasopressin.starttime, 'vasopressin' as event, vasopressin.vaso_amount as event_value
-    from cohort
-    inner join `physionet-data.mimic_derived.vasopressin` vasopressin
-    on vasopressin.stay_id=cohort.stay_id
-    and vasopressin.starttime >= cohort.intime
-    and vasopressin.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
-    where vasopressin.vaso_amount is not null
+    inner join `physionet-data.mimic_derived.norepinephrine_equivalent_dose` norepinephrine_ed
+    on norepinephrine_ed.stay_id=cohort.stay_id
+    and norepinephrine_ed.starttime >= cohort.intime
+    and norepinephrine_ed.starttime <= datetime_add(cohort.intime, INTERVAL 72 HOUR)
+    where norepinephrine_ed.norepinephrine_equivalent_dose is not null
+    group by norepinephrine_ed.stay_id, norepinephrine_equivalent_dose , cohort.intime
 )
 order by stay_id, intime, charttime
